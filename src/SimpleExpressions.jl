@@ -5,7 +5,7 @@ Package `SimpleExpressions` provide means to manage simple expressions.
 """
 module SimpleExpressions
 
-export ScaledVariable, SimpleExpression
+export ScaledVariable, LinearCombination
 
 """
     ex = ScaledVariable([α = 1,] sym)
@@ -61,7 +61,7 @@ Base.show(io::IO, ex::ScaledVariable) =
     print(io, "ScaledVariable(:(", convert(Expr, ex), "))")
 
 """
-    ex = SimpleExpression(args...)
+    ex = LinearCombination(args...)
 
 yields a simple expression which is a linear combination of variables.  Each
 argument `args...` is pushed into an, initially empty, expression which is
@@ -71,21 +71,21 @@ Each argument can be an expression that can be represented as a linear
 combination of variables.
 
 """
-struct SimpleExpression <: AbstractVector{ScaledVariable}
+struct LinearCombination <: AbstractVector{ScaledVariable}
     terms::Vector{ScaledVariable}
-    SimpleExpression(A::AbstractVector{ScaledVariable}) = new(A)
+    LinearCombination(A::AbstractVector{ScaledVariable}) = new(A)
 end
 
-terms(A::SimpleExpression) = getfield(A, :terms)
+terms(A::LinearCombination) = getfield(A, :terms)
 
-SimpleExpression() = SimpleExpression(ScaledVariable[])
-SimpleExpression(ex) = push!(SimpleExpression(), ex)
-SimpleExpression(args...) = push!(SimpleExpression(), args...)
+LinearCombination() = LinearCombination(ScaledVariable[])
+LinearCombination(ex) = push!(LinearCombination(), ex)
+LinearCombination(args...) = push!(LinearCombination(), args...)
 
-Base.convert(::Type{T}, A::T) where {T<:SimpleExpression} = A
-Base.convert(::Type{T}, A) where {T<:SimpleExpression} = T(A)
+Base.convert(::Type{T}, A::T) where {T<:LinearCombination} = A
+Base.convert(::Type{T}, A) where {T<:LinearCombination} = T(A)
 
-function Base.convert(::Type{Expr}, A::SimpleExpression)
+function Base.convert(::Type{Expr}, A::LinearCombination)
     expr = Expr(:call)
     args = expr.args
     for arg in A
@@ -102,22 +102,22 @@ function Base.convert(::Type{Expr}, A::SimpleExpression)
     end
 end
 
-Base.show(io::IO, ::MIME"text/plain", A::SimpleExpression) = show(io, A)
-Base.show(io::IO, A::SimpleExpression) =
-    print(io, "SimpleExpression(:(", convert(Expr, A), "))")
+Base.show(io::IO, ::MIME"text/plain", A::LinearCombination) = show(io, A)
+Base.show(io::IO, A::LinearCombination) =
+    print(io, "LinearCombination(:(", convert(Expr, A), "))")
 
 # Make simple expressions behave like vectors.
 for fn in (:axes, :length, :size, :strides)
-    @eval Base.$fn(A::SimpleExpression) = $fn(terms(A))
+    @eval Base.$fn(A::LinearCombination) = $fn(terms(A))
 end
-Base.IndexStyle(::Type{<:SimpleExpression}) = IndexStyle(Vector)
-@inline function Base.getindex(A::SimpleExpression, I...)
+Base.IndexStyle(::Type{<:LinearCombination}) = IndexStyle(Vector)
+@inline function Base.getindex(A::LinearCombination, I...)
     B = terms(A)
     @boundscheck checkbounds(B, I...)
     @inbounds r = getindex(B, I...)
     return r
 end
-@inline function Base.setindex(A::SimpleExpression, x, I...)
+@inline function Base.setindex(A::LinearCombination, x, I...)
     B = terms(A)
     @boundscheck checkbounds(B, I...)
     @inbounds setindex!(B, x, I...)
@@ -125,20 +125,20 @@ end
 end
 
 """
-    push!(A::SimpleExpression, ex...) -> A
+    push!(A::LinearCombination, ex...) -> A
 
 pushes simple expressions `ex...` into the linear combination of variables `A`,
 the result is similar as summing all arguments.
 
 """
-function Base.push!(A::SimpleExpression, args...)
+function Base.push!(A::LinearCombination, args...)
     for ex in args
         push!(A, ex)
     end
     return A
 end
 
-function Base.push!(A::SimpleExpression, ex::ScaledVariable)
+function Base.push!(A::LinearCombination, ex::ScaledVariable)
     for k in eachindex(A.terms)
         if A.terms[k].name == ex.name
             A.terms[k] = ScaledVariable(ex.mult + A.terms[k].mult, ex.name)
@@ -149,10 +149,10 @@ function Base.push!(A::SimpleExpression, ex::ScaledVariable)
     return A
 end
 
-Base.push!(A::SimpleExpression, name::Union{Symbol,AbstractString}) =
+Base.push!(A::LinearCombination, name::Union{Symbol,AbstractString}) =
     push!(A, ScaledVariable(name))
 
-function Base.push!(A::SimpleExpression, ex::Expr; mult::Real=1)
+function Base.push!(A::LinearCombination, ex::Expr; mult::Real=1)
     n = length(ex.args)
     if ex.head == :call
         fn = ex.args[1]
@@ -178,21 +178,21 @@ function Base.push!(A::SimpleExpression, ex::Expr; mult::Real=1)
 end
 
 """
-    merge!(A::SimpleExpression, B::SimpleExpression...) -> A
+    merge!(A::LinearCombination, B::LinearCombination...) -> A
 
 merges simple linear combinations of variables represented by `A` and each of
 `B...` into `A` and returns `A`.  The result is similar to summing all
 arguments.
 
 """
-function Base.merge!(A::SimpleExpression, args::SimpleExpression...)
+function Base.merge!(A::LinearCombination, args::LinearCombination...)
     for B in args
         merge!(A, B)
     end
     return A
 end
 
-function Base.merge!(A::SimpleExpression, B::SimpleExpression)
+function Base.merge!(A::LinearCombination, B::LinearCombination)
     for ex in B.terms
         push!(A, ex)
     end
@@ -200,25 +200,25 @@ function Base.merge!(A::SimpleExpression, B::SimpleExpression)
 end
 
 """
-    merge(args::SimpleExpression...) -> A
+    merge(args::LinearCombination...) -> A
 
 merges all linear combinations of variables specified as arguments and return
-an instance of `SimpleExpression` which is similar to summing all arguments.
+an instance of `LinearCombination` which is similar to summing all arguments.
 
 """
-function Base.merge(A::SimpleExpression, args::SimpleExpression...)
+function Base.merge(A::LinearCombination, args::LinearCombination...)
     merge!(copy(A), args...)
 end
 
 """
-    copy(A::SimpleExpression) -> B
+    copy(A::LinearCombination) -> B
 
 yields an independent copy of the linear combination of variables represented
 by `A`.
 
 """
-function Base.copy(A::SimpleExpression)
-    B = SimpleExpression()
+function Base.copy(A::LinearCombination)
+    B = LinearCombination()
     n = length(A.terms)
     n ≥ 1 && copyto!(resize!(B.terms, n), 1, A.terms, 1, n)
     return B
