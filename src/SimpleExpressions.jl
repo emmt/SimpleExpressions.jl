@@ -5,7 +5,7 @@ Package `SimpleExpressions` provide means to manage simple expressions.
 """
 module SimpleExpressions
 
-export SimpleExpression, ScaledVariable
+export ScaledVariable, SimpleExpression
 
 """
     ex = ScaledVariable([α = 1,] sym)
@@ -46,18 +46,19 @@ Base.:(*)(α::Real, ex::ScaledVariable) = ScaledVariable(α*ex.mult, ex.name)
 Base.:(/)(ex::ScaledVariable, α::Real) = ScaledVariable(ex.mult/α, ex.name)
 Base.:(\)(α::Real, ex::ScaledVariable) = ex/α
 
-function Base.show(io::IO, ::MIME"text/plain", ex::ScaledVariable)
-    print(io, "ScaledVariable: ")
-    if ex.mult == 1
-        print(io, ex.name)
-    elseif ex.mult == -1
-        print(io, "-", ex.name)
-    elseif ex.mult == 0
-        print(io, 0)
+function Base.convert(::Type{Expr}, var::ScaledVariable)
+    if var.mult == 1
+        return var.name
+    elseif var.mult == -1
+        return Expr(:call, :(-), var.name)
     else
-        print(io, ex.mult, "*", ex.name)
+        return Expr(:call, :(*), var.mult, var.name)
     end
 end
+
+Base.show(io::IO, ::MIME"text/plain", ex::ScaledVariable) = show(io, ex)
+Base.show(io::IO, ex::ScaledVariable) =
+    print(io, "ScaledVariable(:(", convert(Expr, ex), "))")
 
 """
     ex = SimpleExpression(args...)
@@ -75,11 +76,35 @@ struct SimpleExpression <: AbstractVector{ScaledVariable}
     SimpleExpression(A::AbstractVector{ScaledVariable}) = new(A)
 end
 
+terms(A::SimpleExpression) = getfield(A, :terms)
+
 SimpleExpression() = SimpleExpression(ScaledVariable[])
 SimpleExpression(ex) = push!(SimpleExpression(), ex)
 SimpleExpression(args...) = push!(SimpleExpression(), args...)
 
-terms(A::SimpleExpression) = getfield(A, :terms)
+Base.convert(::Type{T}, A::T) where {T<:SimpleExpression} = A
+Base.convert(::Type{T}, A) where {T<:SimpleExpression} = T(A)
+
+function Base.convert(::Type{Expr}, A::SimpleExpression)
+    expr = Expr(:call)
+    args = expr.args
+    for arg in A
+        arg.mult == 0 && continue
+        length(args) == 1 && prepend!(args, (:(+),))
+        push!(args, convert(Expr, arg))
+    end
+    if length(args) == 0
+        return 0
+    elseif length(args) == 1
+        return args[1]
+    else
+        return expr
+    end
+end
+
+Base.show(io::IO, ::MIME"text/plain", A::SimpleExpression) = show(io, A)
+Base.show(io::IO, A::SimpleExpression) =
+    print(io, "SimpleExpression(:(", convert(Expr, A), "))")
 
 # Make simple expressions behave like vectors.
 for fn in (:axes, :length, :size, :strides)
@@ -177,8 +202,8 @@ end
 """
     merge(args::SimpleExpression...) -> A
 
-merges all simple linear combinations specified as arguments and return an
-instance of `SimpleExpression` which is similar to summing all arguments.
+merges all linear combinations of variables specified as arguments and return
+an instance of `SimpleExpression` which is similar to summing all arguments.
 
 """
 function Base.merge(A::SimpleExpression, args::SimpleExpression...)
@@ -188,8 +213,8 @@ end
 """
     copy(A::SimpleExpression) -> B
 
-yields an independent copy of the simple linear combination of variables
-represented by `A`.
+yields an independent copy of the linear combination of variables represented
+by `A`.
 
 """
 function Base.copy(A::SimpleExpression)
